@@ -1,0 +1,288 @@
+# USING PYTHON - SECURE-DIGI-LOCKSYSTEM
+# Include the library files
+
+import I2C_LCD_driver #  used to control the LCD display through I2C communication.
+import RPi.GPIO as GPIO # control GPIO pins on the Raspberry Pi.
+from time import sleep # add delays in the code.
+
+# Enter column pins - 
+# The numbers 5, 6, 13, and 19 represent the GPIO (General Purpose Input/Output) 
+# pin numbers on the Raspberry Pi to which the columns of the keypad are connected. 
+C1 = 5 # C1 (Column 1) is connected to GPIO pin 5.
+C2 = 6
+C3 = 13
+C4 = 19
+
+# Enter row pins - 
+# Similar to the column pins, the numbers 12, 16, 20, and 21 represent the GPIO (General Purpose Inp/Out put) 
+# pin numbers on the Raspberry Pi to which the rows of the keypad are connected. 
+R1 = 12 # R1 (Row 1) is connected to GPIO pin 12.
+R2 = 16
+R3 = 20
+R4 = 21
+
+# The buzzer pin is used to control sound output, and the relay pin is likely used to control the power to an external device.
+# The relayState variable is initialized to True, indicating that the relay is initially in an active state.
+# you  can also set it to the False (if you dont want to start the device initially )
+
+# Enter buzzer pin
+buzzer = 17 
+# Enter LED pin
+Relay = 27
+relayState = True
+
+# Create a object for the LCD
+lcd = I2C_LCD_driver.lcd()
+
+#Starting text => Displays the text "System loading" on the LCD.The parameters 1, 1 specify that the text 
+#should be displayed on the first row (1) and at the first column (1) of the LCD.
+lcd.lcd_display_string("System loading",1,1)
+
+# ".": The string or character that will be displayed on the LCD. In this case, it's a dot.
+# 2: The row number on the LCD where the text will be displayed.
+# a: The column number on the LCD where the text will be displayed. The value of a changes in each iteration 
+# of the loop, ranging from 0 to 15 in this case.
+for a in range (0,16):
+    lcd.lcd_display_string(".",2,a)
+    sleep(0.1) # adds a small delay between each dot, creating a visual loading effect.
+    
+# Clears the entire content on the LCD after displaying the loading dots.    
+lcd.lcd_clear()
+
+# The GPIO pin of the column of the key that is currently
+# being held down or -1 if no key is pressed initially
+keypadPressed = -1
+
+# Enter your PIN - WE CAN CHANGE THIS TO ANYTHING 
+secretCode = "1111"
+
+# variable is likely used to store the input entered by the user, specifically in the context of entering a 
+# PIN code.
+input = ""
+
+# Setup GPIO - configure 
+# output => In the context of GPIO, "output" refers to the capability of a GPIO pin to produce an electrical 
+# signal. An  output pin can be used to send signals to external devices, such as turning on an LED, 
+# activating a buzzer,  or controlling a relay.
+
+# Disables GPIO warnings. This is done to suppress warnings about channel conflicts or redefinitions.
+GPIO.setwarnings(False) 
+
+# Sets the GPIO numbering mode to BCM => Broadcom SOC channel numbers. This mode refers to the GPIO pin 
+# numbers on the Raspberry Pi board.
+GPIO.setmode(GPIO.BCM)
+
+# In a Raspberry Pi, a GPIO pin can be set to high (3.3V) or low (0V). A GPIO pin set to high allows current 
+# to flow to components, while a GPIO pin set to low does not allows current to flow 
+GPIO.setup(buzzer,GPIO.OUT)
+GPIO.setup(Relay,GPIO.OUT) # set relay as output => .OUT
+GPIO.output(Relay,GPIO.HIGH) # # Set GPIO pin "Relay" to HIGH, turning ON a connected device
+
+# Set column pins of Raspberry pi (5,6,13,19) as output pins => Columns are set as output pins (GPIO.OUT) 
+# because during the 4x4 keypad-scanning process, the system needs to send a signal to each column, one at a 
+# time, to check for button presses.
+# By setting them as output, the Raspberry Pi can control the voltage on these pins, enabling and disabling 
+# each column consecutively.
+GPIO.setup(C1, GPIO.OUT)
+GPIO.setup(C2, GPIO.OUT)
+GPIO.setup(C3, GPIO.OUT)
+GPIO.setup(C4, GPIO.OUT)
+
+# Set row pins as input pins => Pull-Up/Pull-Down Resistors:
+
+# pull_up_down=GPIO.PUD_DOWN: This parameter sets the pull-down resistor on each input pin. A pull-down 
+# resistor is used to ensure a stable LOW state when the button connected to the corresponding row is not 
+# pressed.
+# The idea is that when the button is not pressed, the pin is effectively connected to ground through the 
+# pull-down resistor, ensuring a default LOW state. When the button is pressed, the pin is connected to a 
+# HIGH  state.
+
+GPIO.setup(R1, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) # Configures GPIO pin R1 as an input pin. This means #that the Raspberry Pi will be reading the state (HIGH or LOW) of this pin.
+
+GPIO.setup(R2, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(R3, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(R4, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+# This callback registers the key that was pressed => global- u can modify the variable anywhere , 
+
+def keypadCallback(channel):
+# what happens if i simultaneously press the keypad faster 2-4 times ?? 
+
+# ans :=>  a: First Keypress:If you press a key for the first time, and keypadPressed is still -1 (no key is 
+#currently registered), the condition is satisfied.
+#The value of channel (the GPIO channel corresponding to the pressed key) is then assigned to keypadPressed, 
+#indicating that this key is now registered.
+
+#b : Simultaneous Second Keypress:If you press a different key while the first key is still held down, the 
+#callback will be triggered again for the second key.
+#However, the condition if keypadPressed == -1 will not be satisfied because keypadPressed is no longer -1  
+# (it has been set to the channel of the first key).
+#Therefore, the second key will not be registered until the first key is released.
+
+#c : Release First Key: When you release the first key, the keypadPressed variable returns to -1, and the 
+#callback can register a new keypress.
+
+    global keypadPressed
+    
+    # if no other key is currently pressed
+    if keypadPressed == -1:
+        keypadPressed = channel # the GPIO channel corresponding to the pressed key
+
+# Detect the rising edges, 
+
+# callback=keypadCallback: Specifies the callback function to be executed when the rising edge event is 
+#detected on the specified GPIO channel.
+
+# GPIO.RISING: This argument specifies the type of event to detect. In this case, it's the rising edge. The 
+#rising edge occurs when the input signal transitions from a LOW to a HIGH state.
+
+# add_event_detect() =>  This function sets up event detection on a specified GPIO channel (pin). It monitors 
+#the changes in the specified event type (GPIO.RISING) and calls the specified callback function 
+#(keypadCallback) when the event is detected.
+
+GPIO.add_event_detect(R1, GPIO.RISING, callback=keypadCallback)
+GPIO.add_event_detect(R2, GPIO.RISING, callback=keypadCallback)
+GPIO.add_event_detect(R3, GPIO.RISING, callback=keypadCallback)
+GPIO.add_event_detect(R4, GPIO.RISING, callback=keypadCallback)
+
+# Sets all rows to a specific state.
+# state => (arguement) This argument represents the desired state to which all the column pins should be set.
+def setAllRows(state):
+    GPIO.output(C1, state) # Sets the state of column pin C1 to the specified state.
+    GPIO.output(C2, state)
+    GPIO.output(C3, state)
+    GPIO.output(C4, state)
+
+# Check or clear PIN
+def commands():
+    global relayState
+    global input
+    pressed = False
+    GPIO.output(C1, GPIO.HIGH) # set the column pin C1 to high 
+    
+    # Clear PIN 
+    # check for Row-1 , is the key pressed in first row 
+    if (GPIO.input(R1) == 1):
+        print("Input reset!");
+        lcd.lcd_clear()
+        lcd.lcd_display_string("Clear",1,5) # 1st row and 5th column 
+        sleep(1) # stop the execution for 1 second => user should see the message Clear
+        pressed = True # key is pressed
+    GPIO.output(C1, GPIO.HIGH) # it ensures that the program is ready for subsequent key presses or actions
+
+    # Check PIN, if we did not press R1 , but pressed a key from Row-2
+    if (not pressed and GPIO.input(R2) == 1):
+        # is it the same code that we set (1111)
+        if input == secretCode:
+            print("Code correct!")
+            lcd.lcd_clear()
+            lcd.lcd_display_string("Successful",1,3) # 1st row , 3rd column 
+            
+            # if the relay is on  
+            if relayState:
+            # The coil is controlled by a low-voltage signal (from the Raspberry Pi GPIO), and when the coil 
+            # is energized, it activates the switch. set the relay to False (to de-energize the relay coil.)
+                GPIO.output(Relay,GPIO.LOW) 
+                GPIO.output(buzzer,GPIO.HIGH) # give a small buzzer (sound that it is correct)
+                sleep(0.3) # run the buzzer for 0.3 seconds , so sleep
+                GPIO.output(buzzer,GPIO.LOW) # off the buzzer now (after only small time)
+                sleep(1) # to reflect all the callbacks again - sleep
+                relayState = False # off the relay 
+
+            # once we turn off the relay     
+            elif relayState == False:
+                GPIO.output(Relay,GPIO.HIGH) # again current should flow (energize the coil)
+                GPIO.output(buzzer,GPIO.HIGH) # again on the buzzer 
+                # again follow the same procedure for above if loop , but change the relayState
+                sleep(0.3) 
+                GPIO.output(buzzer,GPIO.LOW)
+                sleep(1)
+                relayState = True # on the relay 
+                  
+        # if we press 1222 or something else => wrong code , the buzzer-sound , should be continuously for 
+        # 3-4 times
+        else:
+            print("Incorrect code!")
+            lcd.lcd_clear()
+            lcd.lcd_display_string("Wrong PIN!",1,3)
+            GPIO.output(buzzer,GPIO.HIGH)
+            sleep(0.3)
+            GPIO.output(buzzer,GPIO.LOW)
+            sleep(0.3)
+            GPIO.output(buzzer,GPIO.HIGH)
+            sleep(0.3)
+            GPIO.output(buzzer,GPIO.LOW)
+            sleep(0.3)
+            GPIO.output(buzzer,GPIO.HIGH)
+            sleep(0.3)
+            GPIO.output(buzzer,GPIO.LOW) 
+
+        pressed = True # This is used to prevent further actions in the same iteration of the loop.
+
+    # This step is performed after the buzzer sounds, and it ensures that the program is ready for subsequent 
+    # key presses or actions. The column pins are often set to LOW after completing a keypress-related 
+    # operation.    
+    GPIO.output(C1, GPIO.LOW)
+    
+    # again we pressed the key , delete all the previous keys (cuz the pattern is over - wrong or correct )
+    if pressed:
+        input = ""
+    return pressed
+
+# reads the columns and appends the value, that corresponds to the button, to a variable
+def read(column, characters):
+    global input
+    GPIO.output(column, GPIO.HIGH)
+    # check for 1111 wrt (R1, R2, R3, R4)
+    if(GPIO.input(R1) == 1):
+        # add it to input to form a string finally 
+        input = input + characters[0]
+        print(input)
+        lcd.lcd_display_string(str(input),2,0) # display on 2nd row and 0th column
+    if(GPIO.input(R2) == 1):
+        input = input + characters[1]
+        print(input)
+        lcd.lcd_display_string(str(input),2,0)
+    if(GPIO.input(R3) == 1):
+        input = input + characters[2]
+        print(input)
+        lcd.lcd_display_string(str(input),2,0)
+    if(GPIO.input(R4) == 1):
+        input = input + characters[3]
+        print(input)
+        lcd.lcd_display_string(str(input),2,0)
+
+    # we took 4 characters as i/p from user - now stop (no further inputs )    => LOW
+    GPIO.output(column, GPIO.LOW)
+
+# main - loop 
+try:
+    while True:       
+        lcd.lcd_display_string("Enter your PIN:",1,0) # display on 1st row , 0th column
+        
+        # If a button was previously pressed,
+        # check, whether the user has released it yet
+        if keypadPressed != -1:
+            setAllRows(GPIO.HIGH)
+            if GPIO.input(keypadPressed) == 0:
+                keypadPressed = -1
+            else:
+                sleep(0.1)
+        # Otherwise, just read the input
+        else:
+            if not commands():
+            # The values ["D", "C", "B", "A"], ["#", "9", "6", "3"], ["0", "8", "5", "2"], and ["*", "7", 
+            # "4", "1"] are not jibberish; they represent the characters associated with each button in the 
+            # respective columns of the keypad. These values are specific to the design of the keypad or  
+            # input device you are using.
+                read(C1, ["D","C","B","A"]) # c-column  here  for 4x4 keypad
+                read(C2, ["#","9","6","3"])
+                read(C3, ["0","8","5","2"])
+                read(C4, ["*","7","4","1"])
+                sleep(0.1) #  0.1 seconds
+            else:
+                sleep(0.1)
+
+# user pressed something different    like to interrrupt-ctrl+c or anything-else to stop              
+except KeyboardInterrupt:
+    print("Stopped!")
